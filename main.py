@@ -1,4 +1,4 @@
-from app.module import analyze
+from src.app.module import analyze
 
 if __name__ == "__main__":
     analyze()

@@ -135,13 +135,24 @@ def calculate_report_metrics(
 
 def filter_report_metrics(
     report_metrics: List[Dict[str, Union[str, int, float]]], report_size: int
-):
+) -> List[Dict[str, Union[str, int, float]]]:
     report_metrics.sort(reverse=True, key=lambda d: (d.get("time_sum", 0.0), 0))
     return report_metrics[0:report_size]
 
 
-def generate_report(report_metrics: Dict[str, Union[int, float]], report_dir: str):
-    print(len(report_metrics))
+def generate_report(
+    report_metrics_json: str, report_date: str, report_dir: str
+) -> None:
+    template_name = "report.html"
+
+    if not os.path.exists(template_name):
+        return None
+
+    report_content = open(template_name, encoding="utf-8").read()
+    report_content = report_content.replace("$table_json", report_metrics_json)
+
+    report_path = f"{report_dir}/report-{report_date}.html"
+    open(report_path, mode="w", encoding="utf-8").write(report_content)
 
 
 def analyze() -> None:
@@ -161,7 +172,7 @@ def analyze() -> None:
     if latest_log_data is None:
         return None
 
-    latest_log, _ = latest_log_data
+    latest_log, latest_date = latest_log_data
 
     latest_log_path = f"{log_dir}/{latest_log}"
 
@@ -175,4 +186,6 @@ def analyze() -> None:
 
     filtered_report_metrics = filter_report_metrics(report_metrics, report_size)
 
-    generate_report(filtered_report_metrics, report_dir)
+    report_metrics_json = json.dumps(filtered_report_metrics)
+
+    generate_report(report_metrics_json, latest_date, report_dir)
