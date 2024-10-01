@@ -1,6 +1,5 @@
-from src.app.module import func, err
+from src.app.module import main
 
 
 if __name__ == '__main__':
-    print(func())
-    print(err())
+    main()
