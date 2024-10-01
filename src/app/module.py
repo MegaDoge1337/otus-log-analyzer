@@ -4,7 +4,7 @@ import os
 import re
 import statistics
 import sys
-from typing import IO, Dict, Optional, Tuple, Union
+from typing import IO, Dict, Generator, List, Optional, Tuple, Union
 
 config: Dict[str, Union[str, int]] = {
     "REPORT_SIZE": 1000,
@@ -70,29 +70,29 @@ def open_log_file(log_path: str) -> IO[str]:
     return open(log_path, encoding="utf-8")
 
 
-def parse_log_entries(log_file: IO[str]):
+def parse_log_entries(log_file: IO[str]) -> Generator[Dict[str, str], None, None]:
     line_pattern = r"(?:GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s+(?P<url>[^\s]+).*?\s+(?P<request_time>\d+\.\d+)$"
     idx = 0
 
     for line in log_file:
+        idx += 1
         line_match = re.search(line_pattern, line)
 
         if line_match is None:
             yield {
-                "error": f"Failed parsing {log_file.name} line {idx + 1} `{line}` does not contains format matches"
+                "error": f"Failed parsing {log_file.name} line {idx} `{line}` does not contains format matches"
             }
-            idx += 1
+
             continue
 
         yield line_match.groupdict()
-        idx += 1
 
 
-def aggregate_entries_info(log_file: IO[str], entries_parser):
+def aggregate_entries_info(entries_parser: Generator[Dict[str, str], None, None]):
     entries_info: Dict[str, list[float]] = {}
     total_info = {"entries": 0, "request_time": 0.0}
 
-    for entry in entries_parser(log_file):
+    for entry in entries_parser:
         if "error" in entry:
             print(entry)
             continue
@@ -111,11 +111,13 @@ def aggregate_entries_info(log_file: IO[str], entries_parser):
     return entries_info, total_info
 
 
-def calculate_report_metrics(entries_info, total_info):
-    report_metrics = []
+def calculate_report_metrics(
+    entries_info: Dict[str, list[float]], total_info: Dict[str, Union[int, float]]
+) -> List[Dict[str, Union[str, int, float]]]:
+    report_metrics: List[Dict[str, Union[str, int, float]]] = []
 
     for url in entries_info:
-        entry_metrics = {
+        entry_metrics: Dict[str, Union[str, int, float]] = {
             "url": url,
             "count": len(entries_info[url]),
             "count_perc": len(entries_info[url]) / total_info["entries"] * 100,
@@ -128,17 +130,17 @@ def calculate_report_metrics(entries_info, total_info):
 
         report_metrics.append(entry_metrics)
 
-    report_metrics.sort(reverse=True, key=lambda d: d["time_sum"])
-
-    return report_metrics[0:1000]
+    return report_metrics
 
 
-def filter_report_metrics(report_metrics, report_size):
-    report_metrics.sort(reverse=True, key=lambda d: d["time_sum"])
+def filter_report_metrics(
+    report_metrics: List[Dict[str, Union[str, int, float]]], report_size: int
+):
+    report_metrics.sort(reverse=True, key=lambda d: (d.get("time_sum", 0.0), 0))
     return report_metrics[0:report_size]
 
 
-def generate_report(report_metrics, report_dir: str):
+def generate_report(report_metrics: Dict[str, Union[int, float]], report_dir: str):
     print(len(report_metrics))
 
 
@@ -165,7 +167,9 @@ def analyze() -> None:
 
     log_file = open_log_file(latest_log_path)
 
-    entries_info, total_info = aggregate_entries_info(log_file, parse_log_entries)
+    entries_parser = parse_log_entries(log_file)
+
+    entries_info, total_info = aggregate_entries_info(entries_parser)
 
     report_metrics = calculate_report_metrics(entries_info, total_info)
 
