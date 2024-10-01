@@ -1,5 +1,4 @@
-from src.app.module import main
+from app.module import analyze
 
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    analyze()

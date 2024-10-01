@@ -4,7 +4,6 @@ import os
 import re
 import statistics
 import sys
-from datetime import datetime
 from typing import IO, Dict, Optional, Tuple, Union
 
 config: Dict[str, Union[str, int]] = {
@@ -23,8 +22,8 @@ def get_external_config_path() -> str:
     return sys.argv[arg_key_index + 1]
 
 
-def read_external_config() -> Dict[str, Union[str, int]]:
-    path = get_external_config_path()
+def read_external_config(config_path: str) -> Dict[str, Union[str, int]]:
+    path = config_path
     file_content = open(path).read()
     return json.loads(file_content)
 
@@ -40,45 +39,28 @@ def merge_configs(
     return default_config
 
 
-def get_latest_log_path_with_date(
+def search_latest_log(
     dir_path: str,
-) -> Optional[Tuple[str, datetime]]:
+) -> Optional[Tuple[str, str]]:
     if not os.path.exists(dir_path):
         print(f"Directory {dir_path} does not exists")
         return None
 
-    name_pattern = r"nginx-access-ui\.log-(?P<date>\d{8})"
-
-    latest_log = None
-    latest_date = None
+    name_pattern = r"^nginx-access-ui\.log-(?P<date>\d{8})(?:\.gz)?$"
 
     logs_list = os.listdir(dir_path)
+    latest_date = "00000000"
+    latest_log = ""
 
-    for log in logs_list:
-        name_match = re.search(name_pattern, log)
+    for log_name in logs_list:
+        name_match = re.search(name_pattern, log_name)
+        if name_match:
+            date = name_match.group("date")
+            if date > latest_date:
+                latest_date = date
+                latest_log = log_name
 
-        if name_match is None:
-            print(f"Skipped {log}...")
-            continue
-
-        date = name_match.group("date") if name_pattern else None
-
-        # if date none ???
-
-        log_date = datetime.strptime(str(date), "%Y%m%d")
-
-        if latest_log is None and latest_date is None:
-            latest_log = log
-            latest_date = log_date
-
-        if log_date > latest_date:
-            latest_log = log
-            latest_date = log_date
-
-    if latest_log is None or latest_date is None:
-        return None
-
-    return f"{dir_path}/{latest_log}", latest_date
+    return latest_log, latest_date
 
 
 def open_log_file(log_path: str) -> IO[str]:
@@ -89,73 +71,104 @@ def open_log_file(log_path: str) -> IO[str]:
 
 
 def parse_log_entries(log_file: IO[str]):
-    log_lines = log_file.readlines()
+    line_pattern = r"(?:GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s+(?P<url>[^\s]+).*?\s+(?P<request_time>\d+\.\d+)$"
+    idx = 0
 
-    line_pattern = r'"(?:GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s+(?P<url>[^\s]+).*?"\s+(?P<request_time>\d+\.\d+)$'
-
-    for idx, line in enumerate(log_lines):
+    for line in log_file:
         line_match = re.search(line_pattern, line)
-        if line_match:
-            yield line_match.groupdict()
-        else:
+
+        if line_match is None:
             yield {
-                "error": f"Failed parsing file {log_file.name}: line {idx + 1} does not contains format matches"
+                "error": f"Failed parsing {log_file.name} line {idx + 1} `{line}` does not contains format matches"
             }
+            idx += 1
+            continue
+
+        yield line_match.groupdict()
+        idx += 1
 
 
-def build_report(log_file: IO[str], entries_parser):
-    entries_stats: Dict[str, list[float]] = {}
-    total_stats = {"entries": 0, "request_time": 0.0}
+def aggregate_entries_info(log_file: IO[str], entries_parser):
+    entries_info: Dict[str, list[float]] = {}
+    total_info = {"entries": 0, "request_time": 0.0}
 
     for entry in entries_parser(log_file):
         if "error" in entry:
-            print(entry["error"])
+            print(entry)
             continue
 
         url = entry["url"]
         request_time = float(entry["request_time"])
 
-        if url not in entries_stats:
-            entries_stats[url] = []
+        if url not in entries_info:
+            entries_info[url] = []
 
-        entries_stats[url].append(request_time)
+        entries_info[url].append(request_time)
 
-        total_stats["entries"] += 1
-        total_stats["request_time"] += request_time
+        total_info["entries"] += 1
+        total_info["request_time"] += request_time
 
-    report_data = []
+    return entries_info, total_info
 
-    for entry in entries_stats:
-        entry_data = {
-            "url": entry,
-            "count": len(entries_stats[entry]),
-            "count_perc": len(entries_stats[entry]) / total_stats["entries"] * 100,
-            "time_sum": sum(entries_stats[entry]),
-            "time_perc": sum(entries_stats[entry]) / total_stats["request_time"] * 100,
-            "time_avg": statistics.mean(entries_stats[entry]),
-            "time_max": max(entries_stats[entry]),
-            "time_med": statistics.median(entries_stats[entry]),
+
+def calculate_report_metrics(entries_info, total_info):
+    report_metrics = []
+
+    for url in entries_info:
+        entry_metrics = {
+            "url": url,
+            "count": len(entries_info[url]),
+            "count_perc": len(entries_info[url]) / total_info["entries"] * 100,
+            "time_sum": sum(entries_info[url]),
+            "time_perc": sum(entries_info[url]) / total_info["request_time"] * 100,
+            "time_avg": statistics.mean(entries_info[url]),
+            "time_max": max(entries_info[url]),
+            "time_med": statistics.median(entries_info[url]),
         }
 
-        report_data.append(entry_data)
+        report_metrics.append(entry_metrics)
+
+    report_metrics.sort(reverse=True, key=lambda d: d["time_sum"])
+
+    return report_metrics[0:1000]
 
 
-def main() -> None:
+def filter_report_metrics(report_metrics, report_size):
+    report_metrics.sort(reverse=True, key=lambda d: d["time_sum"])
+    return report_metrics[0:report_size]
+
+
+def generate_report(report_metrics, report_dir: str):
+    print(len(report_metrics))
+
+
+def analyze() -> None:
     app_config: Dict[str, Union[str, int]] = config
 
     if is_external_config_defined():
-        external_config = read_external_config()
+        external_config_path = get_external_config_path()
+        external_config = read_external_config(external_config_path)
         app_config = merge_configs(app_config, external_config)
 
-    print(app_config)
-
     log_dir = str(app_config["LOG_DIR"])
-    latest_log_data = get_latest_log_path_with_date(log_dir)
+    report_size = int(app_config["REPORT_SIZE"])
+    report_dir = str(app_config["REPORT_DIR"])
+
+    latest_log_data = search_latest_log(log_dir)
 
     if latest_log_data is None:
         return None
 
-    latest_log_path, _ = latest_log_data
+    latest_log, _ = latest_log_data
+
+    latest_log_path = f"{log_dir}/{latest_log}"
 
     log_file = open_log_file(latest_log_path)
-    build_report(log_file, parse_log_entries)
+
+    entries_info, total_info = aggregate_entries_info(log_file, parse_log_entries)
+
+    report_metrics = calculate_report_metrics(entries_info, total_info)
+
+    filtered_report_metrics = filter_report_metrics(report_metrics, report_size)
+
+    generate_report(filtered_report_metrics, report_dir)
