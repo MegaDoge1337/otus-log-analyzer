@@ -2,9 +2,10 @@ import gzip
 import json
 import os
 import re
+import statistics
 import sys
 from datetime import datetime
-from typing import Callable, Dict, Optional, Tuple, Union
+from typing import IO, Dict, Optional, Tuple, Union
 
 config: Dict[str, Union[str, int]] = {
     "REPORT_SIZE": 1000,
@@ -46,7 +47,7 @@ def get_latest_log_path_with_date(
         print(f"Directory {dir_path} does not exists")
         return None
 
-    date_pattern = r"\d{8}"
+    name_pattern = r"nginx-access-ui\.log-(?P<date>\d{8})"
 
     latest_log = None
     latest_date = None
@@ -54,17 +55,21 @@ def get_latest_log_path_with_date(
     logs_list = os.listdir(dir_path)
 
     for log in logs_list:
-        date_match = re.search(date_pattern, log)
-        date = date_match.group() if date_match else None
+        name_match = re.search(name_pattern, log)
 
-        if date is None:
-            print(f"Date in log name {log} is not defined, skipped...")
+        if name_match is None:
+            print(f"Skipped {log}...")
             continue
 
-        log_date = datetime.strptime(date, "%Y%m%d")
+        date = name_match.group("date") if name_pattern else None
 
-        latest_log = log if latest_log is None else latest_log
-        latest_date = log_date if latest_date is None else latest_date
+        # if date none ???
+
+        log_date = datetime.strptime(str(date), "%Y%m%d")
+
+        if latest_log is None and latest_date is None:
+            latest_log = log
+            latest_date = log_date
 
         if log_date > latest_date:
             latest_log = log
@@ -76,11 +81,63 @@ def get_latest_log_path_with_date(
     return f"{dir_path}/{latest_log}", latest_date
 
 
-def get_log_reader(log_path: str) -> Callable:
+def open_log_file(log_path: str) -> IO[str]:
     if ".gz" in log_path:
-        return gzip.open
+        return gzip.open(log_path, mode="rt", encoding="utf-8")
 
-    return open
+    return open(log_path, encoding="utf-8")
+
+
+def parse_log_entries(log_file: IO[str]):
+    log_lines = log_file.readlines()
+
+    line_pattern = r'"(?:GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s+(?P<url>[^\s]+).*?"\s+(?P<request_time>\d+\.\d+)$'
+
+    for idx, line in enumerate(log_lines):
+        line_match = re.search(line_pattern, line)
+        if line_match:
+            yield line_match.groupdict()
+        else:
+            yield {
+                "error": f"Failed parsing file {log_file.name}: line {idx + 1} does not contains format matches"
+            }
+
+
+def build_report(log_file: IO[str], entries_parser):
+    entries_stats: Dict[str, list[float]] = {}
+    total_stats = {"entries": 0, "request_time": 0.0}
+
+    for entry in entries_parser(log_file):
+        if "error" in entry:
+            print(entry["error"])
+            continue
+
+        url = entry["url"]
+        request_time = float(entry["request_time"])
+
+        if url not in entries_stats:
+            entries_stats[url] = []
+
+        entries_stats[url].append(request_time)
+
+        total_stats["entries"] += 1
+        total_stats["request_time"] += request_time
+
+    report_data = []
+
+    for entry in entries_stats:
+        entry_data = {
+            "url": entry,
+            "count": len(entries_stats[entry]),
+            "count_perc": len(entries_stats[entry]) / total_stats["entries"] * 100,
+            "time_sum": sum(entries_stats[entry]),
+            "time_perc": sum(entries_stats[entry]) / total_stats["request_time"] * 100,
+            "time_avg": statistics.mean(entries_stats[entry]),
+            "time_max": max(entries_stats[entry]),
+            "time_med": statistics.median(entries_stats[entry]),
+        }
+
+        report_data.append(entry_data)
 
 
 def main() -> None:
@@ -100,4 +157,5 @@ def main() -> None:
 
     latest_log_path, _ = latest_log_data
 
-    _ = get_log_reader(latest_log_path)
+    log_file = open_log_file(latest_log_path)
+    build_report(log_file, parse_log_entries)
