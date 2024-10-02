@@ -5,7 +5,7 @@ from typing import Dict, List, Union
 
 class BaseMetricsCalculator(ABC):
     @abstractmethod
-    def calculate_report_metrics(self):
+    def calculate_report_metrics(self) -> List[Dict[str, Union[str, int, float]]]:
         pass
 
 
