@@ -129,7 +129,7 @@ def test_search_latest_log_file_dir_empty(
 def test_open_latest_log_file_extention_gz(
     temp_log_files_dir_only_gz: Path, default_name_regex_pattern: str
 ) -> None:
-    log_dir_path = str(temp_log_files_dir)
+    log_dir_path = str(temp_log_files_dir_only_gz)
     log_file_manager = LogFileManager(default_name_regex_pattern, log_dir_path)
     latest_log_path = str(
         temp_log_files_dir_only_gz / "nginx-access-ui.log-20170630.gz"
