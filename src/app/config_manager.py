@@ -9,11 +9,13 @@ class BaseConfigManager(ABC):
         pass
 
     @abstractmethod
-    def get_external_config_path(self, argv: List[str]) -> str:
+    def get_external_config_path(self, argv: List[str]) -> Union[str, None]:
         pass
 
     @abstractmethod
-    def read_external_config(self, config_path: str) -> Dict[str, Union[str, int]]:
+    def read_external_config(
+        self, config_path: Union[str, None]
+    ) -> Union[Dict[str, Union[str, int]], None]:
         pass
 
     @abstractmethod
@@ -32,15 +34,31 @@ class ConfigManager(BaseConfigManager):
     def is_external_config_defined(self, argv: List[str]) -> bool:
         return "--config" in argv
 
-    def get_external_config_path(self, argv: List[str]) -> str:
-        arg_key_index = argv.index("--config")
-        return argv[arg_key_index + 1]
+    def get_external_config_path(self, argv: List[str]) -> Union[str, None]:
+        try:
+            arg_key_index = argv.index("--config")
+            return argv[arg_key_index + 1]
+        except ValueError:
+            return None
+        except IndexError:
+            return None
 
-    def read_external_config(self, config_path: str) -> Dict[str, Union[str, int]]:
-        file_content = open(config_path).read()
+    def read_external_config(
+        self, config_path: Union[str, None]
+    ) -> Union[Dict[str, Union[str, int]], None]:
+        if config_path is None:
+            return None
+
+        config_path = str(config_path)
+        file_content = open(str(config_path)).read()
         return json.loads(file_content)
 
-    def merge_configs(self, external_config: Dict[str, Union[str, int]]) -> None:
+    def merge_configs(
+        self, external_config: Union[Dict[str, Union[str, int]], None]
+    ) -> None:
+        if external_config is None:
+            return None
+
         default_config_keys = self.__config.keys()
         for key in default_config_keys:
             if key in external_config:

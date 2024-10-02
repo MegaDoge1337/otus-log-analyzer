@@ -35,7 +35,7 @@ class HomeworkAnalyzer:
 
         latest_log_path = f"{log_dir}/{latest_log}"
 
-        log_file = log_file_manager.open_log_file(latest_log_path)
+        log_file, _ = log_file_manager.open_log_file(latest_log_path)
 
         parser = Parser(line_regex_pattern, log_file)
 

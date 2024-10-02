@@ -37,10 +37,13 @@ class LogFileManager(ABC):
                     latest_date = date
                     latest_log = log_name
 
+        if latest_log == "":
+            return None
+
         return latest_log, latest_date
 
-    def open_log_file(self, log_path: str) -> IO[str]:
+    def open_log_file(self, log_path: str) -> Tuple[IO[str], str]:
         if ".gz" in log_path:
-            return gzip.open(log_path, mode="rt", encoding="utf-8")
+            return gzip.open(log_path, mode="rt", encoding="utf-8"), ".gz"
 
-        return open(log_path, encoding="utf-8")
+        return open(log_path, encoding="utf-8"), ".log"

@@ -6,11 +6,11 @@ from typing import Dict, List, Union
 
 class BaseReportBuilder(ABC):
     @abstractmethod
-    def sort_report_metrics(self) -> None:
+    def sort_report_metrics(self) -> List[Dict[str, Union[str, int, float]]]:
         pass
 
     @abstractmethod
-    def truncate_report_metrics(self) -> None:
+    def truncate_report_metrics(self) -> List[Dict[str, Union[str, int, float]]]:
         pass
 
     @abstractmethod
@@ -49,13 +49,15 @@ class ReportBuilder(BaseReportBuilder):
         self.__report_date = report_date
         self.__report_template_path = report_template_path
 
-    def sort_report_metrics(self) -> None:
+    def sort_report_metrics(self) -> List[Dict[str, Union[str, int, float]]]:
         self.__report_metrics.sort(
             reverse=True, key=lambda d: (d.get("time_sum", 0.0), 0)
         )
+        return self.__report_metrics
 
-    def truncate_report_metrics(self) -> None:
+    def truncate_report_metrics(self) -> List[Dict[str, Union[str, int, float]]]:
         self.__report_metrics = self.__report_metrics[0 : self.__report_size]
+        return self.__report_metrics
 
     def convert_metrics_to_json(self) -> str:
         return json.dumps(self.__report_metrics)
