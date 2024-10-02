@@ -5,11 +5,13 @@ from typing import IO, Dict, Generator, Tuple, Union
 
 class BaseParser(ABC):
     @abstractmethod
-    def parse_log_entries(self):
+    def parse_log_entries(self) -> Generator[Dict[str, str], None, None]:
         pass
 
     @abstractmethod
-    def get_entries_info(self):
+    def get_entries_info(
+        self,
+    ) -> Tuple[Dict[str, list[float]], Dict[str, Union[int, float]]]:
         pass
 
 

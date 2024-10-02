@@ -6,19 +6,19 @@ from typing import Dict, List, Union
 
 class BaseReportBuilder(ABC):
     @abstractmethod
-    def sort_report_metrics(self):
+    def sort_report_metrics(self) -> None:
         pass
 
     @abstractmethod
-    def truncate_report_metrics(self):
+    def truncate_report_metrics(self) -> None:
         pass
 
     @abstractmethod
-    def convert_metrics_to_json(self):
+    def convert_metrics_to_json(self) -> str:
         pass
 
     @abstractmethod
-    def build_report_path(self):
+    def build_report_path(self) -> str:
         pass
 
     @abstractmethod
