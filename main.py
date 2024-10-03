@@ -1,6 +1,6 @@
 import sys
 
-from src.app.module import HomeworkAnalyzer
+from src.app.module import main
 
 if __name__ == "__main__":
-    HomeworkAnalyzer().analyze_and_save_report(sys.argv)
+    main(sys.argv)
