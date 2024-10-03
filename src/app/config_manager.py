@@ -54,7 +54,7 @@ class ConfigManager(BaseConfigManager):
         return json.loads(file_content)
 
     def merge_configs(
-        self, external_config: Union[Dict[str, Union[str, int]], None]
+        self, external_config: Optional[Dict[str, Union[str, int]]]
     ) -> None:
         if external_config is None:
             return None
