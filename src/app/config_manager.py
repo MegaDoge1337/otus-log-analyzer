@@ -14,8 +14,8 @@ class BaseConfigManager(ABC):
 
     @abstractmethod
     def read_external_config(
-        self, config_path: Union[str, None]
-    ) -> Union[Dict[str, Union[str, int]], None]:
+        self, config_path: Optional[str]
+    ) -> Optional[Dict[str, Union[str, int]]]:
         pass
 
     @abstractmethod
@@ -34,7 +34,7 @@ class ConfigManager(BaseConfigManager):
     def is_external_config_defined(self, argv: List[str]) -> bool:
         return "--config" in argv
 
-    def get_external_config_path(self, argv: List[str]) -> Union[str, None]:
+    def get_external_config_path(self, argv: List[str]) -> Optional[str]:
         try:
             arg_key_index = argv.index("--config")
             return argv[arg_key_index + 1]
@@ -46,7 +46,7 @@ class ConfigManager(BaseConfigManager):
     def read_external_config(
         self,
         config_path: Optional[str],
-    ) -> Union[Dict[str, Union[str, int]], None]:
+    ) -> Optional[Dict[str, Union[str, int]]]:
         if config_path is None:
             return None
 
