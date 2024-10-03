@@ -1,6 +1,6 @@
 import json
 from abc import ABC, abstractmethod
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 
 class BaseConfigManager(ABC):
@@ -44,12 +44,12 @@ class ConfigManager(BaseConfigManager):
             return None
 
     def read_external_config(
-        self, config_path: Union[str, None]
+        self,
+        config_path: Optional[str],
     ) -> Union[Dict[str, Union[str, int]], None]:
         if config_path is None:
             return None
 
-        config_path = str(config_path)
         file_content = open(str(config_path)).read()
         return json.loads(file_content)
 
