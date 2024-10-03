@@ -1,19 +1,66 @@
 import gzip
 import json
+import logging
+import logging.config
+import logging.handlers
 import os
 import re
 import statistics
+import sys
 from collections import namedtuple
-from typing import IO, Dict, Generator, List
+from typing import IO, Dict, Generator, List, Optional
 
-LogFile = namedtuple("LogFile", ["name", "date", "extention"])
-ParserOutput = namedtuple("ParserOutput", ["entries", "total"])
+import structlog
 
 config: Dict = {
     "REPORT_SIZE": 1000,
     "REPORT_DIR": "./reports",
     "LOG_DIR": "./log",
 }
+
+LogFile = namedtuple("LogFile", ["name", "date", "extention"])
+ParserOutput = namedtuple("ParserOutput", ["entries", "total"])
+
+
+def _handle_exception(ex_type, _, traceback) -> None:
+    formated_traceback = ""
+
+    while traceback:
+        filename = traceback.tb_frame.f_code.co_filename
+        name = traceback.tb_frame.f_code.co_name
+        line_no = traceback.tb_lineno
+        formated_traceback += f"\nFile {filename} line {line_no}, in {name}"
+        traceback = traceback.tb_next
+
+    log = structlog.get_logger()
+    log.error(
+        message="Unexpected error", error=ex_type.__name__, traceback=formated_traceback
+    )
+
+
+def _configure_logger(app_log_file: Optional[str]) -> None:
+    handlers: List[logging.Handler] = [logging.StreamHandler()]
+
+    if app_log_file:
+        handlers.append(logging.FileHandler(app_log_file))
+
+    logging.basicConfig(level=logging.DEBUG, format="%(message)s", handlers=handlers)
+
+    structlog.configure(
+        processors=[
+            structlog.stdlib.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.stdlib.BoundLogger,
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=False,
+    )
+
+    sys.excepthook = _handle_exception
 
 
 def is_config_defined(argv: List[str]) -> bool:
@@ -52,19 +99,35 @@ def apply_config(app_config: Dict, ext_config: Dict) -> Dict:
     return app_config
 
 
-def is_log_dir_exists(dir_path: str) -> bool:
+def is_log_dir_exists(dir_path: Optional[str]) -> bool:
+    log = structlog.get_logger()
+
+    log.info(message="Cheking log dir exists", dir_path=dir_path)
+
     if not dir_path:
+        log.debug(
+            message="Configured log directory path empty or None, returned False",
+            dir_path=dir_path,
+        )
         return False
 
     return os.path.exists(dir_path)
 
 
-def get_log_files(dir_path: str) -> List[str]:
+def get_log_files(dir_path: Optional[str]) -> List[str]:
+    log = structlog.get_logger()
+
+    log.info(message="Getting log dir list", dir_path=dir_path)
+
     return os.listdir(dir_path)
 
 
 def search_latest(log_files: List[str]) -> LogFile:
+    log = structlog.get_logger()
+    log.info(message="Starting search latest log file", log_files=log_files)
+
     search_pattern = r"^nginx-access-ui\.log-(?P<date>\d{8})(?:\.gz)?$"
+    log.debug(message="Configure search regex pattern", search_pattern=search_pattern)
 
     latest_date = "00000000"
     latest_log = ""
@@ -73,42 +136,64 @@ def search_latest(log_files: List[str]) -> LogFile:
         name_match = re.search(search_pattern, log_name)
         if name_match:
             date = name_match.group("date")
+            log.debug(message="Name of log file matched", log_name=log_name, date=date)
+
             if date > latest_date:
+                log.debug(
+                    message="Log file date greater, than previos, update latest values",
+                    latest_log=latest_log,
+                    latest_date=date,
+                )
                 latest_date = date
                 latest_log = log_name
+                log.debug(
+                    message="Latest values updated",
+                    latest_log=latest_log,
+                    latest_date=date,
+                )
 
+    log.info(message="Searching finished", latest_log=latest_log, latest_date=date)
     return LogFile(latest_log, latest_date, ".gz" if ".gz" in latest_log else ".log")
 
 
-def get_log_path(log_name: str, log_dir: str) -> str:
+def get_log_path(log_name: str, log_dir: Optional[str]) -> str:
+    log = structlog.get_logger()
+    log.info(message="Trying to get log path", log_name=log_name, log_dir=log_dir)
     return f"{log_dir}/{log_name}"
 
 
 def entries_parser(log_file: IO[str]) -> Generator[Dict, None, None]:
+    log = structlog.get_logger()
+
     parsing_pattern = r"(?:GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s+(?P<url>[^\s]+).*?\s+(?P<request_time>\d+\.\d+)$"
+    log.debug(message="Configure parsing pattern", parsing_patter=parsing_pattern)
 
     idx = 0
     for line in log_file:
         idx += 1
         line_match = re.search(parsing_pattern, line)
 
-        if line_match is None:
-            yield {
-                "error": f"Failed parsing {log_file.name} line {idx} `{line}` does not contains format matches"
-            }
-
-            continue
-
-        yield line_match.groupdict()
+        if not line_match:
+            log.error(
+                message="Failed to parse line",
+                log_file=log_file.name,
+                line_index=idx,
+                line=line,
+            )
+            yield {}
+        else:
+            yield line_match.groupdict()
 
 
 def parse_entries(parser: Generator[Dict, None, None]) -> ParserOutput:
+    log = structlog.get_logger()
+    log.info("Parsing log entries", message="Starting parsing")
+
     entries: Dict = {}
     total: Dict = {"entries": 0, "request_time": 0.0}
 
     for entry in parser:
-        if "error" in entry:
-            # TODO: Parsing Error
+        if not entry:
             continue
 
         url = entry["url"]
@@ -122,10 +207,15 @@ def parse_entries(parser: Generator[Dict, None, None]) -> ParserOutput:
         total["entries"] += 1
         total["request_time"] += request_time
 
+    log.info(message="Finished parsing")
     return ParserOutput(entries, total)
 
 
-def calculate_report_metrics(etnries: Dict, total: Dict) -> List[Dict]:
+def calculate_metrics(etnries: Dict, total: Dict) -> List[Dict]:
+    log = structlog.get_logger()
+
+    log.info(message="Calculating metrics", total=total)
+
     metrics: List[Dict] = []
 
     for url in etnries:
@@ -145,41 +235,83 @@ def calculate_report_metrics(etnries: Dict, total: Dict) -> List[Dict]:
     return metrics
 
 
-def is_report_dir_exists(report_dir: str):
+def is_report_dir_exists(report_dir: Optional[str]):
+    log = structlog.get_logger()
+
+    log.info(message="Checking report dir exists", report_dir=report_dir)
+
     if not report_dir:
+        log.debug(
+            message="Report dir path empty or None, returned False",
+            report_dir=report_dir,
+        )
         return False
 
     return os.path.exists(report_dir)
 
 
 def sort_metrics(metrics: List[Dict]) -> List[Dict]:
+    log = structlog.get_logger()
+
+    log.info(message='Sorting metrics by "time_sum"')
+
     metrics.sort(reverse=True, key=lambda d: (d.get("time_sum", 0.0), 0))
+
+    log.info(message="Metrics sorted")
+
     return metrics
 
 
 def truncate_metrics(metrics: List[Dict], size: int) -> List[Dict]:
-    metrics = metrics[0:size]
-    return metrics
+    log = structlog.get_logger()
+
+    log.info(
+        message="Truncating metrics", current_size=len(metrics), truncate_size=size
+    )
+
+    return metrics[0:size]
 
 
 def get_json_metrics(metrics: List[Dict]) -> str:
+    log = structlog.get_logger()
+
+    log.info(message="Converting metrics to json")
+
     return json.dumps(metrics)
 
 
 def get_report_template(template_path: str) -> str:
+    log = structlog.get_logger()
+
+    log.info(message="Getting report template content")
+
     return open(template_path, encoding="utf-8").read()
 
 
-def get_report_content(template: str, json_metrics: str) -> str:
+def insert_report_content(template: str, json_metrics: str) -> str:
+    log = structlog.get_logger()
+
+    log.info(message="Inserting metrics into template")
+
     return template.replace("$table_json", json_metrics)
 
 
-def get_report_path(report_dir: str, report_date: str) -> str:
+def get_report_path(report_dir: Optional[str], report_date: str) -> str:
+    log = structlog.get_logger()
+
+    log.info(
+        message="Getting report path", report_dir=report_dir, report_date=report_date
+    )
+
     return f"{report_dir}/report-{report_date}.html"
 
 
-def save_report(report_path: str, report_content: str) -> int:
-    return open(report_path, mode="w", encoding="utf-8").write(report_content)
+def save_report(report_path: str, report: str) -> int:
+    log = structlog.get_logger()
+
+    log.info(message="Saving file", report_path=report_path)
+
+    return open(report_path, mode="w", encoding="utf-8").write(report)
 
 
 def main(argv: List[str]) -> None:
@@ -187,27 +319,48 @@ def main(argv: List[str]) -> None:
 
     if is_config_defined(argv):
         ext_config_path = get_config_path(argv)
+
+        if not ext_config_path:
+            sys.exit()
+
         ext_config_text = read_config(ext_config_path)
+
+        if not ext_config_text:
+            sys.exit()
+
         ext_config = load_config(ext_config_text)
+
+        if not ext_config:
+            sys.exit()
+
         app_config = apply_config(app_config, ext_config)
 
-    log_dir = app_config["LOG_DIR"]
-    report_dir = app_config["REPORT_DIR"]
+        if not app_config:
+            sys.exit()
+
+    _configure_logger(app_config.get("LOG_FILE"))
+
+    log = structlog.get_logger()
+
+    log.info(message="Application started", app_config=app_config)
+
+    log_dir = app_config.get("LOG_DIR")
+    report_dir = app_config.get("REPORT_DIR")
 
     if not is_log_dir_exists(log_dir):
-        # TODO: Log error: dir not exists
+        log.error(message="Application exited: log dir does not exists")
         exit()
 
     log_files = get_log_files(log_dir)
 
     if not log_files:
-        # TODO: Log error: dir empty
+        log.error(message="Application exited: log dir is empty")
         exit()
 
     latest_log = search_latest(log_files)
 
     if not latest_log or not latest_log.name:
-        # TODO: Log error : latest file not found
+        log.error(message="Application exited: lates log could not be found")
         exit()
 
     log_path = get_log_path(latest_log.name, log_dir)
@@ -220,16 +373,16 @@ def main(argv: List[str]) -> None:
     parser = entries_parser(log_file)
     parser_output = parse_entries(parser)
 
-    metrics = calculate_report_metrics(parser_output.entries, parser_output.total)
+    metrics = calculate_metrics(parser_output.entries, parser_output.total)
     metrics = sort_metrics(metrics)
     metrics = truncate_metrics(metrics, 2)
     metrics_json = get_json_metrics(metrics)
 
     if not is_report_dir_exists(report_dir):
-        # TODO: Log error: dir not exists
+        log.error(message="Application exited: report dir does not exists")
         exit()
 
-    report_template = get_report_template("report.html")
-    report_content = get_report_content(report_template, metrics_json)
     report_path = get_report_path(report_dir, latest_log.date)
-    save_report(report_path, report_content)
+    report_template = get_report_template("report.html")
+    report = insert_report_content(report_template, metrics_json)
+    save_report(report_path, report)
