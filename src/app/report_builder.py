@@ -1,7 +1,7 @@
 import json
 import os
 from abc import ABC, abstractmethod
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 
 class BaseReportBuilder(ABC):
@@ -22,7 +22,7 @@ class BaseReportBuilder(ABC):
         pass
 
     @abstractmethod
-    def insert_into_template(self, report_metrics_json: str) -> Union[str, None]:
+    def insert_into_template(self, report_metrics_json: str) -> Optional[str]:
         pass
 
     @abstractmethod
@@ -65,7 +65,7 @@ class ReportBuilder(BaseReportBuilder):
     def build_report_path(self) -> str:
         return f"{self.__report_dir}/report-{self.__report_date}.html"
 
-    def insert_into_template(self, report_metrics_json: str) -> Union[str, None]:
+    def insert_into_template(self, report_metrics_json: str) -> Optional[str]:
         if not os.path.exists(self.__report_template_path):
             return None
 
