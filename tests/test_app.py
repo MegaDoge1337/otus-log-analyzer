@@ -1,6 +1,7 @@
 import json
 import os
-from typing import Optional
+from pathlib import Path
+from typing import Dict, List, Optional
 
 import pytest
 
@@ -10,14 +11,15 @@ app._configure_logger(None)
 
 
 @pytest.fixture
-def sample_parser_output():
-    entries = {"/index.html": [0.1, 0.2, 0.3], "/api/data": [0.4, 0.5], "/about": [0.6]}
-    total = {"entries": 6, "request_time": 2.1}
-    return entries, total
+def sample_parser_output() -> app.ParserOutput:
+    return app.ParserOutput(
+        {"/index.html": [0.1, 0.2, 0.3], "/api/data": [0.4, 0.5], "/about": [0.6]},
+        {"entries": 6, "request_time": 2.1},
+    )
 
 
 @pytest.fixture
-def sample_metrics():
+def sample_metrics() -> List[Dict]:
     return [
         {"url": "/page1", "time_sum": 10.5},
         {"url": "/page2", "time_sum": 5.2},
@@ -49,7 +51,7 @@ def test_is_config_defined(argv, expected):
     assert app.is_config_defined(argv) == expected
 
 
-def test_read_config(tmp_path):
+def test_read_config(tmp_path: Path):
     assert app.read_config("") == ""
 
     temp_file = tmp_path / "test_config.txt"
@@ -116,7 +118,7 @@ def test_apply_config():
     assert original_ext_config == {"key": "ext_value"}
 
 
-def test_is_log_dir_exists(tmp_path):
+def test_is_log_dir_exists(tmp_path: Path):
     existing_dir = tmp_path / "existing_dir"
     existing_dir.mkdir()
 
@@ -133,7 +135,7 @@ def test_is_log_dir_exists(tmp_path):
     assert app.is_log_dir_exists("/")
 
 
-def test_get_log_files(tmp_path):
+def test_get_log_files(tmp_path: Path):
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
 
@@ -214,7 +216,7 @@ def test_get_log_path(log_name: str, log_dir: Optional[str], expected: str):
     assert result == expected
 
 
-def test_entries_parser(tmp_path):
+def test_entries_parser(tmp_path: Path):
     log_content = [
         '192.168.1.1 - - [01/Jan/2023:00:00:01 +0000] "GET /index.html HTTP/1.1" 200 1234 "-" "Mozilla/5.0" 0.123\n',
         '192.168.1.2 - - [01/Jan/2023:00:00:02 +0000] "POST /api/data HTTP/1.1" 201 567 "-" "PostmanRuntime/7.28.4" 0.456\n',
@@ -236,7 +238,7 @@ def test_entries_parser(tmp_path):
         assert next(parser, None) is None
 
 
-def test_parse_entries(tmp_path):
+def test_parse_entries(tmp_path: Path):
     log_content = [
         '192.168.1.1 - - [01/Jan/2023:00:00:01 +0000] "GET /index.html HTTP/1.1" 200 1234 "-" "Mozilla/5.0" 0.123\n',
         '192.168.1.2 - - [01/Jan/2023:00:00:02 +0000] "POST /api/data HTTP/1.1" 201 567 "-" "PostmanRuntime/7.28.4" 0.456\n',
@@ -263,8 +265,9 @@ def test_parse_entries(tmp_path):
     assert result.total["request_time"] == 0.813
 
 
-def test_calculate_metrics(sample_parser_output):
-    entries, total = sample_parser_output
+def test_calculate_metrics(sample_parser_output: app.ParserOutput):
+    entries = sample_parser_output.entries
+    total = sample_parser_output.total
 
     result = app.calculate_metrics(entries, total)
 
@@ -314,7 +317,7 @@ def test_calculate_metrics(sample_parser_output):
     ],
 )
 def test_is_report_dir_exists(
-    report_dir: Optional[str], expected_result: bool, tmp_path
+    report_dir: Optional[str], expected_result: bool, tmp_path: Path
 ):
     if report_dir == "/non/existent/directory":
         report_dir = str(tmp_path / "non_existent")
@@ -326,7 +329,7 @@ def test_is_report_dir_exists(
     assert result == expected_result
 
 
-def test_sort_metrics(sample_metrics):
+def test_sort_metrics(sample_metrics: List[Dict]):
     sorted_metrics = app.sort_metrics(sample_metrics)
     expected_order = ["/page3", "/page6", "/page1", "/page4", "/page2", "/page5"]
     assert [m["url"] for m in sorted_metrics] == expected_order
@@ -346,7 +349,7 @@ def test_sort_metrics(sample_metrics):
     assert app.sort_metrics([]) == []
 
 
-def test_truncate_metrics(sample_metrics):
+def test_truncate_metrics(sample_metrics: List[Dict]):
     result = app.truncate_metrics(sample_metrics, 3)
     assert len(result) == 3
     assert result == sample_metrics[:3]
@@ -376,7 +379,7 @@ def test_truncate_metrics(sample_metrics):
     assert all(isinstance(item, dict) for item in result)
 
 
-def test_get_json_metrics(sample_metrics):
+def test_get_json_metrics(sample_metrics: List[Dict]):
     result = app.get_json_metrics(sample_metrics)
 
     assert isinstance(result, str)
@@ -399,7 +402,7 @@ def test_get_json_metrics(sample_metrics):
     assert json.loads(nested_result) == nested_metrics
 
 
-def test_get_report_template(tmp_path):
+def test_get_report_template(tmp_path: Path):
     template_content = """
   <html>
   <head><title>{{ title }}</title></head>
@@ -457,7 +460,7 @@ def test_get_report_path():
     )
 
 
-def test_save_report(tmp_path):
+def test_save_report(tmp_path: Path):
     report_content = "This is a test report."
     report_path = tmp_path / "report.html"
 
@@ -469,7 +472,7 @@ def test_save_report(tmp_path):
     assert saved_content == report_content
 
 
-def test_main(tmp_path):
+def test_main(tmp_path: Path):
     log_dir = tmp_path / "log"
     log_dir.mkdir()
 
