@@ -78,14 +78,20 @@ def read_config(config_path: str) -> str:
     if not config_path:
         return ""
 
-    return open(config_path, encoding="utf-8").read()
+    try:
+        return open(config_path, encoding="utf-8").read()
+    except FileNotFoundError:
+        return ""
 
 
 def load_config(config_text: str) -> Dict:
     if not config_text:
         return {}
 
-    return json.loads(config_text)
+    try:
+        return json.loads(config_text)
+    except json.JSONDecodeError:
+        return {}
 
 
 def apply_config(app_config: Dict, ext_config: Dict) -> Dict:
@@ -106,7 +112,7 @@ def is_log_dir_exists(dir_path: Optional[str]) -> bool:
 
     if not dir_path:
         log.debug(
-            message="Configured log directory path empty or None, returned False",
+            message="Configured log directory path is empty or None, returned False",
             dir_path=dir_path,
         )
         return False
@@ -119,7 +125,23 @@ def get_log_files(dir_path: Optional[str]) -> List[str]:
 
     log.info(message="Getting log dir list", dir_path=dir_path)
 
-    return os.listdir(dir_path)
+    if not dir_path:
+        log.debug(
+            message="Configured log directory path is empty or None, returned []",
+            dir_path=dir_path,
+        )
+        return []
+
+    try:
+        return os.listdir(dir_path)
+    except FileNotFoundError:
+        log.error(
+            message="Failed to get logs list: directory not found", dir_path=dir_path
+        )
+        return []
+    except NotADirectoryError:
+        log.error(message="Failed to get logs list: not a directory", dir_path=dir_path)
+        return []
 
 
 def search_latest(log_files: List[str]) -> LogFile:
@@ -152,13 +174,24 @@ def search_latest(log_files: List[str]) -> LogFile:
                     latest_date=date,
                 )
 
-    log.info(message="Searching finished", latest_log=latest_log, latest_date=date)
+    log.info(
+        message="Searching finished", latest_log=latest_log, latest_date=latest_date
+    )
     return LogFile(latest_log, latest_date, ".gz" if ".gz" in latest_log else ".log")
 
 
 def get_log_path(log_name: str, log_dir: Optional[str]) -> str:
     log = structlog.get_logger()
     log.info(message="Trying to get log path", log_name=log_name, log_dir=log_dir)
+
+    if not log_dir:
+        log.debug(message='Log dir path is empty or None, returned ""', log_dir=log_dir)
+        return ""
+
+    if not log_name:
+        log.debug(message='Log name is empty or None, returned ""', log_name=log_name)
+        return ""
+
     return f"{log_dir}/{log_name}"
 
 
@@ -187,7 +220,7 @@ def entries_parser(log_file: IO[str]) -> Generator[Dict, None, None]:
 
 def parse_entries(parser: Generator[Dict, None, None]) -> ParserOutput:
     log = structlog.get_logger()
-    log.info("Parsing log entries", message="Starting parsing")
+    log.info(message="Starting log entries parsing")
 
     entries: Dict = {}
     total: Dict = {"entries": 0, "request_time": 0.0}
@@ -207,7 +240,7 @@ def parse_entries(parser: Generator[Dict, None, None]) -> ParserOutput:
         total["entries"] += 1
         total["request_time"] += request_time
 
-    log.info(message="Finished parsing")
+    log.info(message="Finished log entries parsing")
     return ParserOutput(entries, total)
 
 
@@ -285,7 +318,20 @@ def get_report_template(template_path: str) -> str:
 
     log.info(message="Getting report template content")
 
-    return open(template_path, encoding="utf-8").read()
+    try:
+        return open(template_path, encoding="utf-8").read()
+    except FileNotFoundError:
+        log.error(
+            message="Report template file not found",
+            template_path=template_path,
+        )
+        return ""
+    except UnicodeDecodeError:
+        log.error(
+            message="Can not decode report template",
+            template_path=template_path,
+        )
+        return ""
 
 
 def insert_report_content(template: str, json_metrics: str) -> str:
@@ -302,6 +348,13 @@ def get_report_path(report_dir: Optional[str], report_date: str) -> str:
     log.info(
         message="Getting report path", report_dir=report_dir, report_date=report_date
     )
+
+    if not report_dir:
+        log.debug(
+            message='Report dir path empty or None, returned ""',
+            report_dir=report_dir,
+        )
+        return ""
 
     return f"{report_dir}/report-{report_date}.html"
 
@@ -383,6 +436,16 @@ def main(argv: List[str]) -> None:
         exit()
 
     report_path = get_report_path(report_dir, latest_log.date)
+
+    if not report_path:
+        log.error(message="Application exited: failed to get report path")
+        exit()
+
     report_template = get_report_template("report.html")
+
+    if not report_path:
+        log.error(message="Application exited: failed to get report template")
+        exit()
+
     report = insert_report_content(report_template, metrics_json)
     save_report(report_path, report)
