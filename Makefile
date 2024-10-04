@@ -1,16 +1,16 @@
 .PHONY: test, typing, lint, format, import-sort
 
 test:
-	pytest ./tests/
+	poetry run pytest
 
 typing:
-	mypy .
+	poetry run mypy .
 
 lint:
-	ruff check
+	poetry run ruff check
 
 format:
-	black .
+	poetry run black .
 
 import-sort:
-	isort .
+	poetry run isort .

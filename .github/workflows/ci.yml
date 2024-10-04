@@ -17,8 +17,15 @@ jobs:
           version: 1.8.3
           virtualenvs-create: true
           virtualenvs-in-project: true
-      - run: ls -la
-        shell: bash
-      - run: poetry install --no-interaction --no-root
-      - run: poetry install --no-interaction
-      - run: poetry run pytest
+      - name: install dependencies
+        run: poetry install
+      - name: run linter
+        run: poetry run ruff check
+      - name: run formatter
+        run: poetry run black .
+      - name: check import sorting
+        run: poetry run isort .
+      - name: check typing
+        run: poetry run mypy .
+      - name: run tests
+        run: poetry run pytest
