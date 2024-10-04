@@ -399,6 +399,7 @@ def main(argv: List[str]) -> None:
 
     log_dir = app_config.get("LOG_DIR")
     report_dir = app_config.get("REPORT_DIR")
+    report_size = int(str(app_config.get("REPORT_SIZE")))
 
     if not is_log_dir_exists(log_dir):
         log.error(message="Application exited: log dir does not exists")
@@ -428,7 +429,7 @@ def main(argv: List[str]) -> None:
 
     metrics = calculate_metrics(parser_output.entries, parser_output.total)
     metrics = sort_metrics(metrics)
-    metrics = truncate_metrics(metrics, 2)
+    metrics = truncate_metrics(metrics, report_size)
     metrics_json = get_json_metrics(metrics)
 
     if not is_report_dir_exists(report_dir):
