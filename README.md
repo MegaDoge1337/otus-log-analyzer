@@ -34,7 +34,7 @@ log_format ui_short '$remote_addr  $remote_user $http_x_real_ip [$time_local] "$
 
 1. Склонируйте проект:
 ```
-git clone ...
+git clone https://github.com/MegaDoge1337/otus-log-analyzer
 ```
 2. Установите зависимости:
 ```
