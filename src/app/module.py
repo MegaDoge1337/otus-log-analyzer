@@ -67,21 +67,21 @@ def is_config_defined(argv: List[str]) -> bool:
     return "--config" in argv
 
 
-def get_config_path(argv: List[str]) -> str:
+def get_config_path(argv: List[str]) -> Optional[str]:
     try:
         return argv[argv.index("--config") + 1]
     except IndexError:
-        return ""
+        return None
 
 
-def read_config(config_path: str) -> str:
+def read_config(config_path: str) -> Optional[str]:
     if not config_path:
-        return ""
+        return None
 
     try:
         return open(config_path, encoding="utf-8").read()
     except FileNotFoundError:
-        return ""
+        return None
 
 
 def load_config(config_text: str) -> Dict:
@@ -180,17 +180,17 @@ def search_latest(log_files: List[str]) -> LogFile:
     return LogFile(latest_log, latest_date, ".gz" if ".gz" in latest_log else ".log")
 
 
-def get_log_path(log_name: str, log_dir: Optional[str]) -> str:
+def get_log_path(log_name: str, log_dir: Optional[str]) -> Optional[str]:
     log = structlog.get_logger()
     log.info(message="Trying to get log path", log_name=log_name, log_dir=log_dir)
 
     if not log_dir:
         log.debug(message='Log dir path is empty or None, returned ""', log_dir=log_dir)
-        return ""
+        return None
 
     if not log_name:
         log.debug(message='Log name is empty or None, returned ""', log_name=log_name)
-        return ""
+        return None
 
     return f"{log_dir}/{log_name}"
 
@@ -313,7 +313,7 @@ def get_json_metrics(metrics: List[Dict]) -> str:
     return json.dumps(metrics)
 
 
-def get_report_template(template_path: str) -> str:
+def get_report_template(template_path: str) -> Optional[str]:
     log = structlog.get_logger()
 
     log.info(message="Getting report template content")
@@ -325,13 +325,13 @@ def get_report_template(template_path: str) -> str:
             message="Report template file not found",
             template_path=template_path,
         )
-        return ""
+        return None
     except UnicodeDecodeError:
         log.error(
             message="Can not decode report template",
             template_path=template_path,
         )
-        return ""
+        return None
 
 
 def insert_report_content(template: str, json_metrics: str) -> str:
@@ -342,7 +342,7 @@ def insert_report_content(template: str, json_metrics: str) -> str:
     return template.replace("$table_json", json_metrics)
 
 
-def get_report_path(report_dir: Optional[str], report_date: str) -> str:
+def get_report_path(report_dir: Optional[str], report_date: str) -> Optional[str]:
     log = structlog.get_logger()
 
     log.info(
@@ -354,7 +354,7 @@ def get_report_path(report_dir: Optional[str], report_date: str) -> str:
             message='Report dir path empty or None, returned ""',
             report_dir=report_dir,
         )
-        return ""
+        return None
 
     return f"{report_dir}/report-{report_date}.html"
 
@@ -417,12 +417,46 @@ def main(argv: List[str]) -> None:
         log.error(message="Application exited: lates log could not be found")
         exit()
 
+    report_path = get_report_path(report_dir, latest_log.date)
+
+    if not report_path:
+        log.error(message="Application exited: failed to get report path")
+        exit()
+
+    if os.path.exists(report_path):
+        log.info(
+            message="Application exited: report for latest log already exists",
+            latest_log=latest_log.name,
+            report_path=report_path,
+        )
+        exit()
+
     log_path = get_log_path(latest_log.name, log_dir)
-    log_file: IO[str] = (
-        gzip.open(log_path, mode="rt", encoding="utf-8")
-        if latest_log.extention == ".gz"
-        else open(log_path, encoding="utf-8")
-    )
+
+    if not log_path:
+        log.error(message="Application exited: failed to get log path")
+        exit()
+
+    try:
+        log_file: IO[str] = (
+            gzip.open(str(log_path), mode="rt", encoding="utf-8")
+            if latest_log.extention == ".gz"
+            else open(str(log_path), encoding="utf-8")
+        )
+    except FileNotFoundError:
+        log.error(
+            message="Application exited: latest log file could not be found",
+            log_path=log_path,
+            log_extention=latest_log.extention,
+        )
+        exit()
+    except gzip.BadGzipFile:
+        log.error(
+            message="Application exited: invalid gzip file",
+            log_path=log_path,
+            log_extention=latest_log.extention,
+        )
+        exit()
 
     parser = entries_parser(log_file)
     parser_output = parse_entries(parser)
@@ -444,9 +478,9 @@ def main(argv: List[str]) -> None:
 
     report_template = get_report_template("report.html")
 
-    if not report_path:
+    if not report_template:
         log.error(message="Application exited: failed to get report template")
         exit()
 
-    report = insert_report_content(report_template, metrics_json)
+    report = insert_report_content(str(report_template), metrics_json)
     save_report(report_path, report)

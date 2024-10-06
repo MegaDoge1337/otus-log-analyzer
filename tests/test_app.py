@@ -52,7 +52,7 @@ def test_is_config_defined(argv, expected):
 
 
 def test_read_config(tmp_path: Path):
-    assert app.read_config("") == ""
+    assert app.read_config("") is None
 
     temp_file = tmp_path / "test_config.txt"
     temp_file.write_text("test configuration content", encoding="utf-8")
@@ -61,7 +61,7 @@ def test_read_config(tmp_path: Path):
 
     non_existent_file = tmp_path / "non_existent_file.txt"
 
-    assert app.read_config(str(non_existent_file)) == ""
+    assert app.read_config(str(non_existent_file)) is None
 
 
 def test_load_config():
@@ -206,9 +206,9 @@ def test_search_latest():
     [
         ("access.log", "/var/log", "/var/log/access.log"),
         ("error.log", "/tmp", "/tmp/error.log"),
-        ("app.log", None, ""),
-        ("", "/var/log", ""),
-        ("system.log", "", ""),
+        ("app.log", None, None),
+        ("", "/var/log", None),
+        ("system.log", "", None),
     ],
 )
 def test_get_log_path(log_name: str, log_dir: Optional[str], expected: str):
@@ -419,12 +419,12 @@ def test_get_report_template(tmp_path: Path):
 
     assert result == template_content
 
-    assert app.get_report_template(str(tmp_path / "non_existent_file.html")) == ""
+    assert app.get_report_template(str(tmp_path / "non_existent_file.html")) is None
 
     non_utf8_file = tmp_path / "non_utf8.html"
     non_utf8_file.write_bytes(b"\xFF\xFE" + "Non-UTF8 content".encode("utf-16-le"))
 
-    assert app.get_report_template(str(non_utf8_file)) == ""
+    assert app.get_report_template(str(non_utf8_file)) is None
 
 
 def test_insert_report_content():
@@ -452,8 +452,8 @@ def test_get_report_path():
 
     assert result == expected_path
 
-    assert app.get_report_path(None, report_date) == ""
-    assert app.get_report_path("", report_date) == ""
+    assert app.get_report_path(None, report_date) is None
+    assert app.get_report_path("", report_date) is None
     assert (
         app.get_report_path("/path/to/reports", "20221231")
         == "/path/to/reports/report-20221231.html"
