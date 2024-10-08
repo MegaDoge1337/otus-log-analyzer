@@ -470,12 +470,6 @@ def main(argv: List[str]) -> None:
         log.error(message="Application exited: report dir does not exists")
         exit()
 
-    report_path = get_report_path(report_dir, latest_log.date)
-
-    if not report_path:
-        log.error(message="Application exited: failed to get report path")
-        exit()
-
     report_template = get_report_template("report.html")
 
     if not report_template:
